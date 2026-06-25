@@ -29,15 +29,15 @@
 }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: var(--bg-tertiary); color: var(--text-primary); min-height: 100vh; }
 .container { max-width: 980px; margin: 0 auto; padding: 24px 16px; }
-
-
-
-
-
-
-
-
-
+.auth-bar { display: flex; align-items: center; justify-content: space-between; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 16px; margin-bottom: 16px; font-size: 13px; flex-wrap: wrap; gap: 8px; }
+.auth-status { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.auth-status.connected { color: var(--green); }
+.auth-status i { font-size: 16px; }
+.sync-info { font-size: 12px; color: var(--text-secondary); }
+.auth-btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 13px; font-weight: 500; border: 1px solid var(--border-secondary); border-radius: var(--radius-md); cursor: pointer; background: var(--bg-primary); color: var(--text-primary); }
+.auth-btn:hover { background: var(--bg-secondary); }
+.auth-btn.sign-in { background: #0078d4; color: #fff; border-color: #0078d4; }
+.auth-btn.sign-in:hover { background: #006bbf; }
 .header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -120,34 +120,18 @@ tr:hover td { background: var(--bg-secondary); }
   </div>
 </div>
 
-<script>
-// ── Contraseña de acceso ─────────────────────────────────────────────────────
-// Para cambiarla, reemplaza 'cobranza2024' por la contraseña que quieras
-const ACCESS_PASSWORD = 'cobranza2024';
-
-function checkPwd() {
-  const val = document.getElementById('pwdInput').value;
-  if (val === ACCESS_PASSWORD) {
-    document.getElementById('lockScreen').style.display = 'none';
-    sessionStorage.setItem('auth', '1');
-  } else {
-    document.getElementById('pwdError').style.display = 'block';
-    document.getElementById('pwdInput').value = '';
-    document.getElementById('pwdInput').focus();
-  }
-}
-
-// Si ya autenticó en esta sesión, ocultar pantalla de bloqueo
-if (sessionStorage.getItem('auth') === '1') {
-  document.getElementById('lockScreen').style.display = 'none';
-} else {
-  // Enfocar input automáticamente
-  setTimeout(() => document.getElementById('pwdInput').focus(), 100);
-}
-</script>
+<div style="background:#f8f9fa;border-bottom:1px solid #dee2e6;padding:6px 16px;text-align:right;">
+  <span id="syncStatus" class="sync-status"></span>
+</div>
+<style>
+.sync-status { font-size:12px; }
+.sync-status.ok { color:#1D9E75; }
+.sync-status.warn { color:#D85A30; }
+.sync-status.loading { color:#6c757d; }
+</style>
 
 <div class="container">
-      <div style="display:flex;align-items:center;gap:10px;">
+    <div style="display:flex;align-items:center;gap:10px;">
       <span class="sync-info" id="syncInfo"></span>
       <button class="auth-btn sign-in" id="authBtn" onclick="handleAuth()">
         <i class="ti ti-brand-windows"></i> Conectar con Microsoft
@@ -206,31 +190,107 @@ if (sessionStorage.getItem('auth') === '1') {
 </div>
 
 <div class="toast" id="toast"></div>
-
 <script>
-const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-let now = new Date(), curYear = now.getFullYear(), curMonth = now.getMonth();
-let clients = [], nextId = 1;
+// ── Configuración ────────────────────────────────────────────────────────────
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbx8z_qgijwpb4zDw-dYh3OCWv_nKThNINDmfDn1XH-qu9FfNvN8VwPJGWySRB6teEqT/exec';
+const ACCESS_PASSWORD = 'cobranza2024'; // Cambia esto por tu contraseña
 
-function loadLocal() {
-  try { const s = localStorage.getItem('cpagos_v3'); if (s) { const d = JSON.parse(s); clients = d.clients || []; nextId = d.nextId || 1; } } catch(e) {}
-  if (!clients.length) {
-    clients = [
-      { id:1, name:'Ana Martínez',  freq:'mensual',   amount:800, notes:'Col. Centro',       payments:{} },
-      { id:2, name:'Roberto Pérez', freq:'quincenal', amount:450, notes:'Tel: 312-555-0011', payments:{} },
-      { id:3, name:'Lucía Torres',  freq:'semanal',   amount:200, notes:'Fracc. Las Palmas', payments:{} },
-    ];
-    nextId = 4;
+// ── Pantalla de contraseña ───────────────────────────────────────────────────
+function checkPwd() {
+  const val = document.getElementById('pwdInput').value;
+  if (val === ACCESS_PASSWORD) {
+    document.getElementById('lockScreen').style.display = 'none';
+    sessionStorage.setItem('auth', '1');
+    loadData();
+  } else {
+    document.getElementById('pwdError').style.display = 'block';
+    document.getElementById('pwdInput').value = '';
+    document.getElementById('pwdInput').focus();
   }
 }
 
-function saveLocal() { try { localStorage.setItem('cpagos_v3', JSON.stringify({ clients, nextId })); } catch(e) {} }
+if (sessionStorage.getItem('auth') === '1') {
+  document.getElementById('lockScreen').style.display = 'none';
+}
+setTimeout(() => {
+  const i = document.getElementById('pwdInput');
+  if (i) i.focus();
+}, 100);
 
+// ── Estado ───────────────────────────────────────────────────────────────────
+const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+let now = new Date(), curYear = now.getFullYear(), curMonth = now.getMonth();
+let clients = [], nextId = 1, syncTimeout = null, isSaving = false;
+
+// ── Google Sheets sync ───────────────────────────────────────────────────────
+async function loadData() {
+  showSyncStatus('Cargando datos...', 'loading');
+  try {
+    const resp = await fetch(SHEET_URL);
+    const text = await resp.text();
+    if (text && text !== '{}') {
+      const d = JSON.parse(text);
+      clients = d.clients || [];
+      nextId  = d.nextId  || 1;
+    } else {
+      loadLocal();
+    }
+    render();
+    showSyncStatus('Datos sincronizados ✓', 'ok');
+    setTimeout(() => showSyncStatus('', ''), 3000);
+  } catch(e) {
+    loadLocal();
+    render();
+    showSyncStatus('Sin conexión — datos locales', 'warn');
+  }
+}
+
+async function saveData() {
+  saveLocal();
+  if (isSaving) return;
+  isSaving = true;
+  showSyncStatus('Guardando...', 'loading');
+  try {
+    await fetch(SHEET_URL, {
+      method: 'POST',
+      body: JSON.stringify({ clients, nextId }),
+      headers: { 'Content-Type': 'text/plain' }
+    });
+    const t = new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+    showSyncStatus(`Guardado ${t} ✓`, 'ok');
+    setTimeout(() => showSyncStatus('', ''), 3000);
+  } catch(e) {
+    showSyncStatus('Error al guardar — datos locales', 'warn');
+  }
+  isSaving = false;
+}
+
+function scheduleSave() {
+  saveLocal();
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => saveData(), 1000);
+}
+
+function saveLocal() { try { localStorage.setItem('cpagos_v3', JSON.stringify({ clients, nextId })); } catch(e) {} }
+function loadLocal() {
+  try { const s = localStorage.getItem('cpagos_v3'); if (s) { const d = JSON.parse(s); clients = d.clients || []; nextId = d.nextId || 1; } } catch(e) {}
+  if (!clients.length) { clients = []; nextId = 1; }
+}
+
+function showSyncStatus(msg, type) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'sync-status ' + type;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
 function showToast(msg, type='info') {
   const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast ${type} show`;
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
+// ── Lógica de pagos ──────────────────────────────────────────────────────────
 function monthKey() { return `${curYear}-${String(curMonth+1).padStart(2,'0')}`; }
 
 function periodsForMonth(freq) {
@@ -248,7 +308,7 @@ function isPaid(c, k) { const m=monthKey(); return !!(c.payments[m]&&c.payments[
 function togglePay(id, k) {
   const c = clients.find(x=>x.id===id); if (!c) return;
   const m = monthKey(); if (!c.payments[m]) c.payments[m]={};
-  c.payments[m][k] = !c.payments[m][k]; saveLocal(); render();
+  c.payments[m][k] = !c.payments[m][k]; scheduleSave(); render();
 }
 
 function getStatus(c) {
@@ -290,7 +350,9 @@ function updateSummary() {
 
 function render() {
   document.getElementById('monthLabel').textContent = `${MONTHS[curMonth]} ${curYear}`;
-  renderTable('mensual','table-mensual'); renderTable('quincenal','table-quincenal'); renderTable('semanal','table-semanal');
+  renderTable('mensual','table-mensual');
+  renderTable('quincenal','table-quincenal');
+  renderTable('semanal','table-semanal');
   updateSummary();
 }
 
@@ -310,7 +372,7 @@ function closeModal() { document.getElementById('modalOverlay').classList.remove
 function addClient() {
   const name=document.getElementById('inp-name').value.trim(); if (!name) { document.getElementById('inp-name').focus(); return; }
   clients.push({ id:nextId++, name, freq:document.getElementById('inp-freq').value, amount:document.getElementById('inp-amount').value, notes:document.getElementById('inp-notes').value.trim(), payments:{} });
-  saveLocal();
+  scheduleSave();
   ['inp-name','inp-amount','inp-notes'].forEach(id=>document.getElementById(id).value='');
   closeModal();
   const freq = clients[clients.length-1].freq, tabMap={mensual:0,quincenal:1,semanal:2};
@@ -319,17 +381,19 @@ function addClient() {
   document.querySelectorAll('.tab')[tabMap[freq]].classList.add('active');
   document.querySelectorAll('.section')[tabMap[freq]].classList.add('active');
   render();
+  showToast('Cliente agregado', 'success');
 }
 
 function deleteClient(id) {
   if (!confirm('¿Eliminar este cliente?')) return;
-  clients=clients.filter(c=>c.id!==id); saveLocal(); render();
+  clients=clients.filter(c=>c.id!==id); scheduleSave(); render();
 }
 
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target===document.getElementById('modalOverlay')) closeModal(); });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
 
-loadLocal(); render();
+// Cargar datos solo si ya está autenticado
+if (sessionStorage.getItem('auth') === '1') loadData();
 </script>
 </body>
 </html>
