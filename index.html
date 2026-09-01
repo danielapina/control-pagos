@@ -213,7 +213,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     <div id="reportPreview"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeReportModal()">Cerrar</button>
-      <button class="btn btn-primary" id="sendReportBtn" onclick="sendReportEmail()">Enviar por correo</button>
+      <button class="btn btn-primary" id="downloadReportBtn" onclick="downloadTodayReport()"><i class="ti ti-download"></i> Descargar reporte</button>
     </div>
   </div>
 </div>
@@ -221,7 +221,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 <script>
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbx8z_qgijwpb4zDw-dYh3OCWv_nKThNINDmfDn1XH-qu9FfNvN8VwPJGWySRB6teEqT/exec';
 const ACCESS_PASSWORD = 'cobranza2024';
-const REPORT_EMAIL = 'administracion@r2recolectora.com.mx';
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
@@ -515,27 +514,18 @@ function openReportModal(){
   document.getElementById('reportModal').classList.add('open');
 }
 function closeReportModal(){document.getElementById('reportModal').classList.remove('open');}
-async function sendReportEmail(){
+function downloadTodayReport(){
   const rows=generateTodayReport();
-  const body=buildReportText(rows);
-  const subject=`Reporte de cobranza ${todayISO()} - ${currentCobrador}`;
-  const btn=document.getElementById('sendReportBtn');
-  if(btn){btn.disabled=true;btn.textContent='Enviando...';}
-  let sentOk=false;
-  try{
-    const r=await fetch(SHEET_URL,{method:'POST',body:JSON.stringify({action:'sendReport',to:REPORT_EMAIL,subject,body,cobrador:currentCobrador,date:todayISO()}),headers:{'Content-Type':'text/plain'}});
-    const t=await r.text();
-    try{ sentOk = JSON.parse(t).ok===true; }catch(e){ sentOk=false; }
-  }catch(e){ sentOk=false; }
-  if(btn){btn.disabled=false;btn.textContent='Enviar por correo';}
-  if(sentOk){
-    alert('Reporte enviado a '+REPORT_EMAIL);
-    closeReportModal();
-  } else {
-    // Respaldo: abre la app de correo con el reporte ya escrito
-    const mailto=`mailto:${REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href=mailto;
-  }
+  const text=buildReportText(rows);
+  const safeName=(currentCobrador||'cobrador').trim().replace(/[^a-zA-Z0-9]+/g,'_');
+  const filename=`reporte_cobranza_${todayISO()}_${safeName}.txt`;
+  const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 
 ['clientModal','payModal','reportModal'].forEach(mid=>{
