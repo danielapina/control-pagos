@@ -71,6 +71,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .period-btn.abono .pb-icon{color:var(--amber-dark)}
 .pb-monto{font-size:9px;font-weight:700;color:var(--amber-dark);max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pb-metodo{position:absolute;top:3px;right:3px;font-size:10px;color:var(--muted)}
+.pb-info{font-size:9px;color:var(--muted);text-align:center;max-width:54px;line-height:1.2;margin-top:2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .period-btn.paid .pb-metodo{color:#fff}
 .period-btn.abono .pb-metodo{color:var(--amber-dark)}
 .badge{display:inline-flex;align-items:center;gap:3px;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
@@ -383,7 +384,14 @@ function periodBtnHTML(c,p){
   if(d && typeof d==='object' && d.metodo){
     metodoIcon = d.metodo==='transferencia' ? '<i class="ti ti-building-bank pb-metodo"></i>' : '<i class="ti ti-cash pb-metodo"></i>';
   }
-  return `<div class="period-item"><span class="period-lbl">${p.label}</span><button class="period-btn ${cls}" onclick="openPayModal(${c.id},'${p.key}')">${icon}${monto}${metodoIcon}</button></div>`;
+    let infoLine='';
+  if(d&&typeof d==='object'&&(d.type==='paid'||d.type==='abono')){
+    const parts=[];
+    if(d.cobrador) parts.push(d.cobrador.split(' ')[0]);
+    if(d.date){const[,mm,dd]=d.date.split('-');parts.push(`${dd}/${mm}`);}
+    if(parts.length) infoLine=`<span class="pb-info">${parts.join(' ')}</span>`;
+  }
+  return `<div class="period-item"><span class="period-lbl">${p.label}</span><button class="period-btn ${cls}" onclick="openPayModal(${c.id},'${p.key}')">${icon}${monto}${metodoIcon}</button>${infoLine}</div>`;
 }
 function getStatusBadge(c){
   const ps=periodsForMonth(c.freq);let paid=0,abonos=0;
@@ -622,13 +630,13 @@ function generateTodayReport(){
       const ps=periodsForMonth(c.freq,y,m-1);
       Object.keys(c.payments[mKey]).forEach(pKey=>{
         const d=c.payments[mKey][pKey];
-        if(!d||typeof d!=='object'||!d.date||d.date!==today) return;
+        if(!d||typeof d!=='object'||!d.date) return; // show all dates in report
         const p=ps.find(x=>x.key===pKey);
         const label=p?p.label:pKey;
         if(d.type==='paid'){
-          rows.push({client:c.name,period:label,type:'Completo',amount:Number(c.amount)||0,metodo:d.metodo||null});
+          rows.push({client:c.name,period:label,type:'Completo',amount:Number(c.amount)||0,metodo:d.metodo||null,cobrador:d.cobrador||'Sin nombre',date:d.date||today});
         } else if(d.type==='abono'){
-          rows.push({client:c.name,period:label,type:'Parcial',amount:Number(d.monto)||0,metodo:d.metodo||null});
+          rows.push({client:c.name,period:label,type:'Parcial',amount:Number(d.monto)||0,metodo:d.metodo||null,cobrador:d.cobrador||'Sin nombre',date:d.date||today});
         }
       });
     });
@@ -638,26 +646,70 @@ function generateTodayReport(){
 function metodoLabel(m){return m==='transferencia'?'Transferencia':m==='efectivo'?'Efectivo':'Sin especificar';}
 function buildReportText(rows){
   const today=todayISO();
-  const completos=rows.filter(r=>r.type==='Completo');
-  const parciales=rows.filter(r=>r.type==='Parcial');
-  const total=rows.reduce((s,r)=>s+r.amount,0);
-  const totalEfectivo=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
-  const totalTransferencia=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
   const lines=[];
-  lines.push(`Reporte de cobranza - ${today}`);
-  lines.push(`Cobrador: ${currentCobrador}`);
+  const sep='─'.repeat(40);
+
+  lines.push('╔' + '═'.repeat(38) + '╗');
+  lines.push('║   REPORTE DE COBRANZA' + ' '.repeat(16) + '║');
+  lines.push('║   Fecha: ' + today + ' '.repeat(27) + '║');
+  lines.push('╚' + '═'.repeat(38) + '╝');
   lines.push('');
-  lines.push(`PAGOS COMPLETOS (${completos.length}):`);
-  if(!completos.length) lines.push('  (ninguno)');
-  completos.forEach(r=>lines.push(`  - ${r.client} (${r.period}): $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)}`));
-  lines.push('');
-  lines.push(`ABONOS PARCIALES (${parciales.length}):`);
-  if(!parciales.length) lines.push('  (ninguno)');
-  parciales.forEach(r=>lines.push(`  - ${r.client} (${r.period}): $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)}`));
-  lines.push('');
-  lines.push(`TOTAL EFECTIVO: $${totalEfectivo.toLocaleString('es-MX')}`);
-  lines.push(`TOTAL TRANSFERENCIA: $${totalTransferencia.toLocaleString('es-MX')}`);
-  lines.push(`TOTAL COBRADO: $${total.toLocaleString('es-MX')}`);
+
+  // Group by cobrador
+  const cobradores={};
+  rows.forEach(r=>{
+    const name=r.cobrador||'Sin nombre';
+    if(!cobradores[name]) cobradores[name]=[];
+    cobradores[name].push(r);
+  });
+
+  const cobradorNames=Object.keys(cobradores).sort();
+
+  cobradorNames.forEach(cob=>{
+    const cobRows=cobradores[cob];
+    const completos=cobRows.filter(r=>r.type==='Completo');
+    const parciales=cobRows.filter(r=>r.type==='Parcial');
+    const totalCob=cobRows.reduce((s,r)=>s+r.amount,0);
+    const totalEfCob=cobRows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+    const totalTrCob=cobRows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+
+    lines.push(sep);
+    lines.push(`COBRADOR: ${cob.toUpperCase()}`);
+    lines.push(sep);
+    lines.push('');
+    lines.push(`  PAGOS COMPLETOS (${completos.length}):`);
+    if(!completos.length) lines.push('    (ninguno)');
+    completos.forEach(r=>{
+      lines.push(`    ✓ ${r.client} (${r.period})`);
+      lines.push(`      $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)} · ${r.date}`);
+    });
+    lines.push('');
+    lines.push(`  ABONOS PARCIALES (${parciales.length}):`);
+    if(!parciales.length) lines.push('    (ninguno)');
+    parciales.forEach(r=>{
+      lines.push(`    ◑ ${r.client} (${r.period})`);
+      lines.push(`      $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)} · ${r.date}`);
+    });
+    lines.push('');
+    lines.push(`  Efectivo:      $${totalEfCob.toLocaleString('es-MX')}`);
+    lines.push(`  Transferencia: $${totalTrCob.toLocaleString('es-MX')}`);
+    lines.push(`  Subtotal:      $${totalCob.toLocaleString('es-MX')}`);
+    lines.push('');
+  });
+
+  // Grand total
+  const grandTotal=rows.reduce((s,r)=>s+r.amount,0);
+  const grandEf=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+  const grandTr=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+  lines.push('═'.repeat(40));
+  lines.push('RESUMEN GENERAL');
+  lines.push('═'.repeat(40));
+  lines.push(`  Cobradores activos: ${cobradorNames.length}`);
+  lines.push(`  Total recibos: ${rows.length}`);
+  lines.push(`  Total efectivo:      $${grandEf.toLocaleString('es-MX')}`);
+  lines.push(`  Total transferencia: $${grandTr.toLocaleString('es-MX')}`);
+  lines.push(`  TOTAL COBRADO: $${grandTotal.toLocaleString('es-MX')}`);
+  lines.push('═'.repeat(40));
   return lines.join('\n');
 }
 function openReportModal(){
@@ -684,8 +736,7 @@ function closeReportModal(){document.getElementById('reportModal').classList.rem
 function downloadTodayReport(){
   const rows=generateTodayReport();
   const text=buildReportText(rows);
-  const safeName=(currentCobrador||'cobrador').trim().replace(/[^a-zA-Z0-9]+/g,'_');
-  const filename=`reporte_cobranza_${todayISO()}_${safeName}.txt`;
+  const filename=`reporte_cobranza_${todayISO()}_todos_cobradores.txt`;
   const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
