@@ -283,6 +283,8 @@ const ACCESS_PASSWORD = 'cobranza2024';
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
+// Cobro un mes atrasado: mostrar el mes anterior por default
+if(curMonth===0){ curMonth=11; curYear--; } else { curMonth--; }
 let clients=[], nextId=1, syncTimeout=null, isSaving=false, payOption=null, payMetodo=null;
 let currentCobrador = sessionStorage.getItem('cobrador') || '';
 let searchQuery='';
