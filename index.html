@@ -60,7 +60,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .icon-btn{background:var(--bg);border:none;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--muted)}
 .icon-btn.edit{color:#0078d4}.icon-btn.del{color:var(--orange)}.icon-btn.note{color:#7048e8}
 .periods-row{padding:0 16px 16px;display:flex;flex-wrap:wrap;gap:8px}
-.period-item{display:flex;flex-direction:column;align-items:center;gap:4px}
+.period-item{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:54px;max-width:72px}
 .period-lbl{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase}
 .period-btn{position:relative;width:54px;height:54px;border-radius:12px;border:2px solid var(--border);background:var(--bg);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;-webkit-tap-highlight-color:transparent;transition:transform .1s}
 .period-btn:active{transform:scale(.92)}
@@ -71,7 +71,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .period-btn.abono .pb-icon{color:var(--amber-dark)}
 .pb-monto{font-size:9px;font-weight:700;color:var(--amber-dark);max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pb-metodo{position:absolute;top:3px;right:3px;font-size:10px;color:var(--muted)}
-.pb-info{font-size:9px;color:var(--muted);text-align:center;max-width:54px;line-height:1.2;margin-top:2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pb-info{font-size:10px;color:var(--muted);text-align:center;max-width:70px;line-height:1.3;margin-top:3px;font-weight:600;white-space:normal;word-break:break-word}
 .period-btn.paid .pb-metodo{color:#fff}
 .period-btn.abono .pb-metodo{color:var(--amber-dark)}
 .badge{display:inline-flex;align-items:center;gap:3px;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
@@ -387,7 +387,12 @@ function periodBtnHTML(c,p){
     let infoLine='';
   if(d&&typeof d==='object'&&(d.type==='paid'||d.type==='abono')){
     const parts=[];
-    if(d.cobrador) parts.push(d.cobrador.split(' ')[0]);
+    if(d.cobrador){
+      const nameParts=d.cobrador.trim().split(' ');
+      // Show first name + first letter of last name if exists
+      const display=nameParts.length>1?`${nameParts[0]} ${nameParts[1][0]}.`:nameParts[0];
+      parts.push(display);
+    }
     if(d.date){const[,mm,dd]=d.date.split('-');parts.push(`${dd}/${mm}`);}
     if(parts.length) infoLine=`<span class="pb-info">${parts.join(' ')}</span>`;
   }
@@ -630,7 +635,7 @@ function generateTodayReport(){
       const ps=periodsForMonth(c.freq,y,m-1);
       Object.keys(c.payments[mKey]).forEach(pKey=>{
         const d=c.payments[mKey][pKey];
-        if(!d||typeof d!=='object'||!d.date) return; // show all dates in report
+        if(!d||typeof d!=='object') return; // all payments, all cobradores
         const p=ps.find(x=>x.key===pKey);
         const label=p?p.label:pKey;
         if(d.type==='paid'){
@@ -714,21 +719,61 @@ function buildReportText(rows){
 }
 function openReportModal(){
   const rows=generateTodayReport();
-  const completos=rows.filter(r=>r.type==='Completo');
-  const parciales=rows.filter(r=>r.type==='Parcial');
   const total=rows.reduce((s,r)=>s+r.amount,0);
-  const totalEfectivo=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
-  const totalTransferencia=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
-  document.getElementById('reportSub').textContent=`${currentCobrador||'(sin nombre)'} · ${todayISO()}`;
+  const totalEf=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+  const totalTr=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+  document.getElementById('reportSub').textContent=`Mes: ${MONTHS[curMonth]} ${curYear}`;
   let html='';
-  html+=`<div class="report-group-title">Pagos completos (${completos.length})</div>`;
-  html+=completos.length?completos.map(r=>`<div class="report-line"><span>${escapeHtml(r.client)} <span style="color:var(--muted)">(${r.period}) · ${metodoLabel(r.metodo)}</span></span><span>$${r.amount.toLocaleString('es-MX')}</span></div>`).join(''):`<div style="font-size:13px;color:var(--muted);padding:4px 0;">Ninguno todavía</div>`;
-  html+=`<div class="report-group-title">Abonos parciales (${parciales.length})</div>`;
-  html+=parciales.length?parciales.map(r=>`<div class="report-line"><span>${escapeHtml(r.client)} <span style="color:var(--muted)">(${r.period}) · ${metodoLabel(r.metodo)}</span></span><span>$${r.amount.toLocaleString('es-MX')}</span></div>`).join(''):`<div style="font-size:13px;color:var(--muted);padding:4px 0;">Ninguno todavía</div>`;
-  html+=`<div class="report-group-title">Totales por método</div>`;
-  html+=`<div class="report-line"><span>Efectivo</span><span>$${totalEfectivo.toLocaleString('es-MX')}</span></div>`;
-  html+=`<div class="report-line"><span>Transferencia</span><span>$${totalTransferencia.toLocaleString('es-MX')}</span></div>`;
-  html+=`<div class="report-total"><span>Total cobrado</span><span>$${total.toLocaleString('es-MX')}</span></div>`;
+
+  // Group by cobrador
+  const cobradores={};
+  rows.forEach(r=>{
+    const name=r.cobrador||'Sin nombre';
+    if(!cobradores[name]) cobradores[name]=[];
+    cobradores[name].push(r);
+  });
+  const cobradorNames=Object.keys(cobradores).sort();
+
+  if(!cobradorNames.length){
+    html=`<div style="text-align:center;padding:20px;color:var(--muted);font-size:14px;">No hay pagos registrados este mes</div>`;
+  } else {
+    cobradorNames.forEach(cob=>{
+      const cobRows=cobradores[cob];
+      const completos=cobRows.filter(r=>r.type==='Completo');
+      const parciales=cobRows.filter(r=>r.type==='Parcial');
+      const subtotal=cobRows.reduce((s,r)=>s+r.amount,0);
+      const subEf=cobRows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+      const subTr=cobRows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+      html+=`<div class="report-group-title" style="background:var(--green);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;">
+        <i class="ti ti-user"></i> ${escapeHtml(cob)}
+        <span style="float:right;font-size:13px;">$${subtotal.toLocaleString('es-MX')}</span>
+      </div>`;
+      if(completos.length){
+        html+=`<div style="font-size:12px;font-weight:700;color:var(--green-dark);padding:4px 0 2px;">✓ Pagos completos (${completos.length})</div>`;
+        html+=completos.map(r=>`<div class="report-line">
+          <span>${escapeHtml(r.client)} <span style="color:var(--muted);font-size:11px;">(${r.period}) · ${r.date||''} · ${metodoLabel(r.metodo)}</span></span>
+          <span>$${r.amount.toLocaleString('es-MX')}</span>
+        </div>`).join('');
+      }
+      if(parciales.length){
+        html+=`<div style="font-size:12px;font-weight:700;color:var(--amber-dark);padding:6px 0 2px;">◑ Abonos (${parciales.length})</div>`;
+        html+=parciales.map(r=>`<div class="report-line">
+          <span>${escapeHtml(r.client)} <span style="color:var(--muted);font-size:11px;">(${r.period}) · ${r.date||''} · ${metodoLabel(r.metodo)}</span></span>
+          <span>$${r.amount.toLocaleString('es-MX')}</span>
+        </div>`).join('');
+      }
+      html+=`<div class="report-line" style="background:var(--bg);border-radius:6px;margin:6px 0 12px;">
+        <span style="font-size:12px;color:var(--muted);">Efectivo: $${subEf.toLocaleString('es-MX')} · Transferencia: $${subTr.toLocaleString('es-MX')}</span>
+        <span style="font-weight:700;">$${subtotal.toLocaleString('es-MX')}</span>
+      </div>`;
+    });
+  }
+
+  // Grand total
+  html+=`<div class="report-total"><span>TOTAL COBRADO</span><span>$${total.toLocaleString('es-MX')}</span></div>`;
+  html+=`<div class="report-line" style="margin-top:4px;"><span style="color:var(--muted);font-size:12px;">Efectivo</span><span>$${totalEf.toLocaleString('es-MX')}</span></div>`;
+  html+=`<div class="report-line"><span style="color:var(--muted);font-size:12px;">Transferencia</span><span>$${totalTr.toLocaleString('es-MX')}</span></div>`;
+
   document.getElementById('reportPreview').innerHTML=html;
   document.getElementById('reportModal').classList.add('open');
 }
