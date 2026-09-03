@@ -66,6 +66,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .period-btn:active{transform:scale(.92)}
 .period-btn.paid{background:var(--green);border-color:var(--green)}
 .period-btn.abono{background:var(--amber-bg);border-color:var(--amber)}
+.period-btn.disabled-period{background:#f1f3f5;border-color:#ced4da;border-style:dashed;cursor:pointer;}
 .pb-icon{font-size:22px;color:var(--muted)}
 .period-btn.paid .pb-icon{color:#fff}
 .period-btn.abono .pb-icon{color:var(--amber-dark)}
@@ -151,8 +152,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 </div>
 
 <div class="search-bar">
-  <i class="ti ti-search"></i>
-  <input type="text" id="searchInput" placeholder="Buscar cliente por nombre..." oninput="onSearchInput()"/>
+  <i class="ti ti-search" style="flex-shrink:0;"></i>
+  <input type="text" id="searchInput" placeholder="Buscar cliente..." oninput="onSearchInput()"/>
+  <button id="searchClear" onclick="clearSearch()" style="display:none;background:#adb5bd;color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:14px;cursor:pointer;flex-shrink:0;align-items:center;justify-content:center;line-height:1;">✕</button>
 </div>
 
 <div class="summary">
@@ -248,6 +250,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
   </div>
 </div>
 
+<!-- Disable period modal -->
+<div class="modal-overlay" id="disableModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h2 id="disableModalTitle"><i class="ti ti-ban" style="color:var(--orange)"></i> Deshabilitar recibo</h2>
+    <p id="disableModalSub" style="font-size:14px;color:var(--muted);margin-bottom:20px;margin-top:-8px;font-weight:500;"></p>
+    <input type="hidden" id="disable-clientId"/>
+    <input type="hidden" id="disable-periodKey"/>
+    <div id="disableContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeDisableModal()">Cancelar</button>
+      <button class="btn btn-primary" id="disableConfirmBtn" onclick="confirmDisable()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Note modal -->
 <div class="modal-overlay" id="noteModal">
   <div class="modal">
@@ -272,7 +290,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     <div id="reportPreview"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeReportModal()">Cerrar</button>
-      <button class="btn btn-primary" id="downloadReportBtn" onclick="downloadTodayReport()"><i class="ti ti-download"></i> Descargar reporte</button>
+      <button class="btn btn-primary" id="downloadReportBtn" onclick="openCustomReportModal()"><i class="ti ti-download"></i> Descargar reporte</button>
     </div>
   </div>
 </div>
@@ -365,6 +383,16 @@ function periodsForMonth(freq,year=curYear,month=curMonth){
 }
 function getPD(c,k){const m=monthKey();return(c.payments[m]&&c.payments[m][k])||null;}
 function setPD(c,k,v){const m=monthKey();if(!c.payments[m])c.payments[m]={};c.payments[m][k]=v;}
+
+// Disabled periods — per month, per period key
+function isDisabled(c,k){const m=monthKey();return !!(c.disabledPeriods&&c.disabledPeriods[m]&&c.disabledPeriods[m][k]);}
+function toggleDisabled(c,k){
+  const m=monthKey();
+  if(!c.disabledPeriods)c.disabledPeriods={};
+  if(!c.disabledPeriods[m])c.disabledPeriods[m]={};
+  if(c.disabledPeriods[m][k]){ delete c.disabledPeriods[m][k]; }
+  else { c.disabledPeriods[m][k]=true; setPD(c,k,null); } // clear payment if disabling
+}
 function isPaidEntry(d){return d===true||d==='paid'||(d&&typeof d==='object'&&d.type==='paid');}
 function isAbonoEntry(d){return !!(d&&typeof d==='object'&&d.type==='abono');}
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -375,30 +403,19 @@ function isVisibleThisMonth(c){
   return true;
 }
 function formatMonthKey(mk){const p=mk.split('-').map(Number);return `${MONTHS[p[1]-1]} ${p[0]}`;}
-function onSearchInput(){searchQuery=document.getElementById('searchInput').value.trim().toLowerCase();render();}
-
-// Render
-function periodBtnHTML(c,p){
-  const d=getPD(c,p.key);
-  let cls='',icon='<i class="ti ti-circle pb-icon"></i>',monto='',metodoIcon='';
-  if(isPaidEntry(d)){cls='paid';icon='<i class="ti ti-check pb-icon"></i>';}
-  else if(isAbonoEntry(d)){cls='abono';icon='<i class="ti ti-coin pb-icon"></i>';monto=`<span class="pb-monto">$${Number(d.monto).toLocaleString('es-MX')}</span>`;}
-  if(d && typeof d==='object' && d.metodo){
-    metodoIcon = d.metodo==='transferencia' ? '<i class="ti ti-building-bank pb-metodo"></i>' : '<i class="ti ti-cash pb-metodo"></i>';
-  }
-    let infoLine='';
-  if(d&&typeof d==='object'&&(d.type==='paid'||d.type==='abono')){
-    const parts=[];
-    if(d.cobrador){
-      const nameParts=d.cobrador.trim().split(' ');
-      // Show first name + first letter of last name if exists
-      const display=nameParts.length>1?`${nameParts[0]} ${nameParts[1][0]}.`:nameParts[0];
-      parts.push(display);
-    }
-    if(d.date){const[,mm,dd]=d.date.split('-');parts.push(`${dd}/${mm}`);}
-    if(parts.length) infoLine=`<span class="pb-info">${parts.join(' ')}</span>`;
-  }
-  return `<div class="period-item"><span class="period-lbl">${p.label}</span><button class="period-btn ${cls}" onclick="openPayModal(${c.id},'${p.key}')">${icon}${monto}${metodoIcon}</button>${infoLine}</div>`;
+function onSearchInput(){
+  searchQuery=document.getElementById('searchInput').value.toLowerCase().trim();
+  const btn=document.getElementById('searchClear');
+  if(btn) btn.style.display=searchQuery?'flex':'none';
+  render();
+}
+function clearSearch(){
+  document.getElementById('searchInput').value='';
+  searchQuery='';
+  const btn=document.getElementById('searchClear');
+  if(btn) btn.style.display='none';
+  document.getElementById('searchInput').focus();
+  render();
 }
 function getStatusBadge(c){
   const ps=periodsForMonth(c.freq);let paid=0,abonos=0;
@@ -448,6 +465,7 @@ function renderList(freq,cid){
 function updateSummary(){
   let paid=0,pending=0,abonos=0,total=0,paidAmt=0,abonoAmt=0,efectivoAmt=0,transferenciaAmt=0;
   clients.filter(isVisibleThisMonth).forEach(c=>periodsForMonth(c.freq).forEach(p=>{
+    if(isDisabled(c,p.key))return;
     total++;const d=getPD(c,p.key);
     if(isPaidEntry(d)){
       paid++;
@@ -793,12 +811,41 @@ function downloadTodayReport(){
   setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
 
-['clientModal','payModal','reportModal','noteModal'].forEach(mid=>{
+['clientModal','payModal','disableModal','reportModal','noteModal','customReportModal'].forEach(mid=>{
   document.getElementById(mid).addEventListener('click',e=>{if(e.target===document.getElementById(mid))document.getElementById(mid).classList.remove('open');});
 });
 
 if(sessionStorage.getItem('auth')==='1' && currentCobrador) loadData();
 else{loadLocal();migrateClients();render();}
 </script>
+
+<!-- Custom report modal -->
+<div class="modal-overlay" id="customReportModal">
+  <div class="modal" style="padding-bottom:50px;">
+    <div class="modal-handle"></div>
+    <h2><i class="ti ti-filter" style="color:var(--green)"></i> Generar reporte</h2>
+
+    <div class="field">
+      <label>Fecha inicio</label>
+      <input type="date" id="rpt-from"/>
+    </div>
+    <div class="field">
+      <label>Fecha fin</label>
+      <input type="date" id="rpt-to"/>
+    </div>
+    <div class="field">
+      <label>Cobrador</label>
+      <select id="rpt-cobrador">
+        <option value="">Todos los cobradores</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeCustomReportModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="downloadCustomReport()"><i class="ti ti-download"></i> Descargar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
