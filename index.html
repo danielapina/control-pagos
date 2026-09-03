@@ -60,19 +60,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .icon-btn{background:var(--bg);border:none;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--muted)}
 .icon-btn.edit{color:#0078d4}.icon-btn.del{color:var(--orange)}.icon-btn.note{color:#7048e8}
 .periods-row{padding:0 16px 16px;display:flex;flex-wrap:wrap;gap:8px}
-.period-item{display:flex;flex-direction:column;align-items:center;gap:4px}
+.period-item{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:54px;max-width:72px}
 .period-lbl{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase}
 .period-btn{position:relative;width:54px;height:54px;border-radius:12px;border:2px solid var(--border);background:var(--bg);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;-webkit-tap-highlight-color:transparent;transition:transform .1s}
 .period-btn:active{transform:scale(.92)}
 .period-btn.paid{background:var(--green);border-color:var(--green)}
 .period-btn.abono{background:var(--amber-bg);border-color:var(--amber)}
+.period-btn.disabled-period{background:#f1f3f5;border-color:#ced4da;border-style:dashed;cursor:pointer;}
 .pb-icon{font-size:22px;color:var(--muted)}
 .period-btn.paid .pb-icon{color:#fff}
 .period-btn.abono .pb-icon{color:var(--amber-dark)}
 .pb-monto{font-size:9px;font-weight:700;color:var(--amber-dark);max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pb-metodo{position:absolute;top:3px;right:3px;font-size:10px;color:var(--muted)}
+.pb-info{font-size:10px;color:var(--muted);text-align:center;max-width:70px;line-height:1.3;margin-top:3px;font-weight:600;white-space:normal;word-break:break-word}
 .period-btn.paid .pb-metodo{color:#fff}
 .period-btn.abono .pb-metodo{color:var(--amber-dark)}
+.pb-toggle{position:absolute;top:2px;left:2px;background:none;border:none;padding:2px;margin:0;font-size:11px;color:var(--muted);opacity:.5;cursor:pointer;line-height:1;z-index:2}
+.pb-toggle:active{opacity:1}
+.period-btn.paid .pb-toggle{color:#fff}
+.period-btn.abono .pb-toggle{color:var(--amber-dark)}
 .badge{display:inline-flex;align-items:center;gap:3px;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
 .badge.paid{background:var(--green-bg);color:var(--green-dark)}
 .badge.partial{background:#EBF4FF;color:#004a99}
@@ -150,8 +156,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 </div>
 
 <div class="search-bar">
-  <i class="ti ti-search"></i>
-  <input type="text" id="searchInput" placeholder="Buscar cliente por nombre..." oninput="onSearchInput()"/>
+  <i class="ti ti-search" style="flex-shrink:0;"></i>
+  <input type="text" id="searchInput" placeholder="Buscar cliente..." oninput="onSearchInput()"/>
+  <button id="searchClear" onclick="clearSearch()" style="display:none;background:#adb5bd;color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:14px;cursor:pointer;flex-shrink:0;align-items:center;justify-content:center;line-height:1;">✕</button>
 </div>
 
 <div class="summary">
@@ -247,6 +254,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
   </div>
 </div>
 
+<!-- Disable period modal -->
+<div class="modal-overlay" id="disableModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h2 id="disableModalTitle"><i class="ti ti-ban" style="color:var(--orange)"></i> Deshabilitar recibo</h2>
+    <p id="disableModalSub" style="font-size:14px;color:var(--muted);margin-bottom:20px;margin-top:-8px;font-weight:500;"></p>
+    <input type="hidden" id="disable-clientId"/>
+    <input type="hidden" id="disable-periodKey"/>
+    <div id="disableContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeDisableModal()">Cancelar</button>
+      <button class="btn btn-primary" id="disableConfirmBtn" onclick="confirmDisable()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Note modal -->
 <div class="modal-overlay" id="noteModal">
   <div class="modal">
@@ -271,7 +294,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     <div id="reportPreview"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeReportModal()">Cerrar</button>
-      <button class="btn btn-primary" id="downloadReportBtn" onclick="downloadTodayReport()"><i class="ti ti-download"></i> Descargar reporte</button>
+      <button class="btn btn-primary" id="downloadReportBtn" onclick="openCustomReportModal()"><i class="ti ti-download"></i> Descargar reporte</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom report modal -->
+<div class="modal-overlay" id="customReportModal">
+  <div class="modal" style="padding-bottom:50px;">
+    <div class="modal-handle"></div>
+    <h2><i class="ti ti-filter" style="color:var(--green)"></i> Generar reporte</h2>
+
+    <div class="field">
+      <label>Fecha inicio</label>
+      <input type="date" id="rpt-from"/>
+    </div>
+    <div class="field">
+      <label>Fecha fin</label>
+      <input type="date" id="rpt-to"/>
+    </div>
+    <div class="field">
+      <label>Cobrador</label>
+      <select id="rpt-cobrador">
+        <option value="">Todos los cobradores</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeCustomReportModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="downloadCustomReport()"><i class="ti ti-download"></i> Descargar</button>
     </div>
   </div>
 </div>
@@ -282,6 +333,8 @@ const ACCESS_PASSWORD = 'cobranza2024';
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
+// Cobro un mes atrasado: mostrar el mes anterior por default
+if(curMonth===0){ curMonth=11; curYear--; } else { curMonth--; }
 let clients=[], nextId=1, syncTimeout=null, isSaving=false, payOption=null, payMetodo=null;
 let currentCobrador = sessionStorage.getItem('cobrador') || '';
 let searchQuery='';
@@ -349,6 +402,7 @@ function migrateClients(){
     if(c.address===undefined) c.address='';
     if(c.deleted===undefined) c.deleted=false;
     if(c.suspendedFrom===undefined) c.suspendedFrom=null;
+    if(!c.disabledPeriods||typeof c.disabledPeriods!=='object') c.disabledPeriods={};
   });
 }
 
@@ -362,6 +416,16 @@ function periodsForMonth(freq,year=curYear,month=curMonth){
 }
 function getPD(c,k){const m=monthKey();return(c.payments[m]&&c.payments[m][k])||null;}
 function setPD(c,k,v){const m=monthKey();if(!c.payments[m])c.payments[m]={};c.payments[m][k]=v;}
+
+// Disabled periods — per month, per period key
+function isDisabled(c,k){const m=monthKey();return !!(c.disabledPeriods&&c.disabledPeriods[m]&&c.disabledPeriods[m][k]);}
+function toggleDisabled(c,k){
+  const m=monthKey();
+  if(!c.disabledPeriods)c.disabledPeriods={};
+  if(!c.disabledPeriods[m])c.disabledPeriods[m]={};
+  if(c.disabledPeriods[m][k]){ delete c.disabledPeriods[m][k]; }
+  else { c.disabledPeriods[m][k]=true; setPD(c,k,null); } // clear payment if disabling
+}
 function isPaidEntry(d){return d===true||d==='paid'||(d&&typeof d==='object'&&d.type==='paid');}
 function isAbonoEntry(d){return !!(d&&typeof d==='object'&&d.type==='abono');}
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -372,27 +436,49 @@ function isVisibleThisMonth(c){
   return true;
 }
 function formatMonthKey(mk){const p=mk.split('-').map(Number);return `${MONTHS[p[1]-1]} ${p[0]}`;}
-function onSearchInput(){searchQuery=document.getElementById('searchInput').value.trim().toLowerCase();render();}
-
-// Render
-function periodBtnHTML(c,p){
-  const d=getPD(c,p.key);
-  let cls='',icon='<i class="ti ti-circle pb-icon"></i>',monto='',metodoIcon='';
-  if(isPaidEntry(d)){cls='paid';icon='<i class="ti ti-check pb-icon"></i>';}
-  else if(isAbonoEntry(d)){cls='abono';icon='<i class="ti ti-coin pb-icon"></i>';monto=`<span class="pb-monto">$${Number(d.monto).toLocaleString('es-MX')}</span>`;}
-  if(d && typeof d==='object' && d.metodo){
-    metodoIcon = d.metodo==='transferencia' ? '<i class="ti ti-building-bank pb-metodo"></i>' : '<i class="ti ti-cash pb-metodo"></i>';
-  }
-  return `<div class="period-item"><span class="period-lbl">${p.label}</span><button class="period-btn ${cls}" onclick="openPayModal(${c.id},'${p.key}')">${icon}${monto}${metodoIcon}</button></div>`;
+function onSearchInput(){
+  searchQuery=document.getElementById('searchInput').value.toLowerCase().trim();
+  const btn=document.getElementById('searchClear');
+  if(btn) btn.style.display=searchQuery?'flex':'none';
+  render();
+}
+function clearSearch(){
+  document.getElementById('searchInput').value='';
+  searchQuery='';
+  const btn=document.getElementById('searchClear');
+  if(btn) btn.style.display='none';
+  document.getElementById('searchInput').focus();
+  render();
 }
 function getStatusBadge(c){
-  const ps=periodsForMonth(c.freq);let paid=0,abonos=0;
+  const ps=periodsForMonth(c.freq).filter(p=>!isDisabled(c,p.key));
+  let paid=0,abonos=0;
   ps.forEach(p=>{const d=getPD(c,p.key);if(isPaidEntry(d))paid++;else if(isAbonoEntry(d))abonos++;});
   const t=ps.length;
+  if(t===0) return `<span class="badge pending"><i class="ti ti-ban"></i> Sin recibos activos</span>`;
   if(paid===t) return `<span class="badge paid"><i class="ti ti-check"></i> Al corriente</span>`;
   if(paid>0)   return `<span class="badge partial">${paid}/${t} pagados</span>`;
   if(abonos>0) return `<span class="badge abono-only"><i class="ti ti-coin"></i> Con abono</span>`;
   return `<span class="badge pending"><i class="ti ti-clock"></i> Pendiente</span>`;
+}
+function periodBtnHTML(c,p){
+  const d=getPD(c,p.key);
+  const disabled=isDisabled(c,p.key);
+  let cls='',icon='<i class="ti ti-circle pb-icon"></i>',monto='',metodoIcon='',info='';
+  if(disabled){
+    cls='disabled-period';
+    icon='<i class="ti ti-ban pb-icon"></i>';
+    info=`<div class="pb-info">Deshabilitado</div>`;
+  } else if(isPaidEntry(d)){
+    cls='paid';icon='<i class="ti ti-check pb-icon"></i>';
+    if(d&&typeof d==='object'&&d.metodo) metodoIcon = d.metodo==='transferencia' ? '<i class="ti ti-building-bank pb-metodo"></i>' : '<i class="ti ti-cash pb-metodo"></i>';
+  } else if(isAbonoEntry(d)){
+    cls='abono';icon='<i class="ti ti-coin pb-icon"></i>';monto=`<span class="pb-monto">$${Number(d.monto).toLocaleString('es-MX')}</span>`;
+    if(d.metodo) metodoIcon = d.metodo==='transferencia' ? '<i class="ti ti-building-bank pb-metodo"></i>' : '<i class="ti ti-cash pb-metodo"></i>';
+  }
+  const mainClick = disabled ? `openDisableModal(${c.id},'${p.key}')` : `openPayModal(${c.id},'${p.key}')`;
+  const toggleBtn = `<span class="pb-toggle" onclick="event.stopPropagation();openDisableModal(${c.id},'${p.key}')" title="${disabled?'Habilitar':'Deshabilitar'} recibo"><i class="ti ti-dots"></i></span>`;
+  return `<div class="period-item"><span class="period-lbl">${p.label}</span><button class="period-btn ${cls}" onclick="${mainClick}">${toggleBtn}${icon}${monto}${metodoIcon}</button>${info}</div>`;
 }
 function renderList(freq,cid){
   const q=searchQuery;
@@ -433,6 +519,7 @@ function renderList(freq,cid){
 function updateSummary(){
   let paid=0,pending=0,abonos=0,total=0,paidAmt=0,abonoAmt=0,efectivoAmt=0,transferenciaAmt=0;
   clients.filter(isVisibleThisMonth).forEach(c=>periodsForMonth(c.freq).forEach(p=>{
+    if(isDisabled(c,p.key))return;
     total++;const d=getPD(c,p.key);
     if(isPaidEntry(d)){
       paid++;
@@ -525,6 +612,32 @@ function confirmPay(){
   scheduleSave();render();closePayModal();
 }
 
+// Disable-period modal
+function openDisableModal(clientId,periodKey){
+  const c=clients.find(x=>x.id===clientId);if(!c)return;
+  const p=periodsForMonth(c.freq).find(x=>x.key===periodKey);
+  document.getElementById('disable-clientId').value=clientId;
+  document.getElementById('disable-periodKey').value=periodKey;
+  document.getElementById('disableModalSub').textContent=`${c.name} · ${p?p.label:''} · ${MONTHS[curMonth]} ${curYear}`;
+  const disabled=isDisabled(c,periodKey);
+  document.getElementById('disableModalTitle').innerHTML = disabled
+    ? '<i class="ti ti-check" style="color:var(--green)"></i> Habilitar recibo'
+    : '<i class="ti ti-ban" style="color:var(--orange)"></i> Deshabilitar recibo';
+  document.getElementById('disableContent').innerHTML = disabled
+    ? `<p style="font-size:14px;color:var(--muted);">Este recibo está deshabilitado: no cuenta como pendiente ni aparece en el resumen. ¿Quieres volver a habilitarlo?</p>`
+    : `<p style="font-size:14px;color:var(--muted);">Úsalo cuando el cliente no debe pagar este periodo (por ejemplo, ya liquidó antes o se le hizo un descuento). El recibo deshabilitado no contará como pendiente ni en el resumen. Se puede volver a habilitar cuando quieras.</p>`;
+  document.getElementById('disableConfirmBtn').textContent = disabled ? 'Habilitar' : 'Deshabilitar';
+  document.getElementById('disableModal').classList.add('open');
+}
+function closeDisableModal(){document.getElementById('disableModal').classList.remove('open');}
+function confirmDisable(){
+  const id=parseInt(document.getElementById('disable-clientId').value);
+  const k=document.getElementById('disable-periodKey').value;
+  const c=clients.find(x=>x.id===id);if(!c)return;
+  toggleDisabled(c,k);
+  scheduleSave();render();closeDisableModal();
+}
+
 // Client modal
 function toggleSuspendField(){
   const status=document.getElementById('c-status').value;
@@ -573,7 +686,7 @@ function saveClient(){
     const c=clients.find(x=>x.id===parseInt(editId));
     if(c){c.name=name;c.freq=freq;c.amount=amount;c.address=address;c.suspendedFrom=suspendedFrom;}
   } else {
-    clients.push({id:nextId++,name,freq,amount,address,suspendedFrom,deleted:false,payments:{},notes:{}});
+    clients.push({id:nextId++,name,freq,amount,address,suspendedFrom,deleted:false,payments:{},notes:{},disabledPeriods:{}});
     const tabMap={mensual:0,quincenal:1,semanal:2};
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
@@ -610,9 +723,8 @@ function saveNote(){
   scheduleSave();render();closeNoteModal();
 }
 
-// ---- Reporte diario ----
-function generateTodayReport(){
-  const today=todayISO();
+// ---- Reportes ----
+function generateReportForRange(fromDate, toDate, cobradorFilter){
   const rows=[];
   clients.filter(c=>!c.deleted).forEach(c=>{
     Object.keys(c.payments||{}).forEach(mKey=>{
@@ -622,70 +734,181 @@ function generateTodayReport(){
       const ps=periodsForMonth(c.freq,y,m-1);
       Object.keys(c.payments[mKey]).forEach(pKey=>{
         const d=c.payments[mKey][pKey];
-        if(!d||typeof d!=='object'||!d.date||d.date!==today) return;
+        if(!d||typeof d!=='object'||!d.date) return;
+        if(fromDate && d.date<fromDate) return;
+        if(toDate && d.date>toDate) return;
+        if(cobradorFilter && d.cobrador!==cobradorFilter) return;
         const p=ps.find(x=>x.key===pKey);
         const label=p?p.label:pKey;
         if(d.type==='paid'){
-          rows.push({client:c.name,period:label,type:'Completo',amount:Number(c.amount)||0,metodo:d.metodo||null});
+          rows.push({client:c.name,period:label,type:'Completo',amount:Number(c.amount)||0,metodo:d.metodo||null,cobrador:d.cobrador||'Sin nombre',date:d.date});
         } else if(d.type==='abono'){
-          rows.push({client:c.name,period:label,type:'Parcial',amount:Number(d.monto)||0,metodo:d.metodo||null});
+          rows.push({client:c.name,period:label,type:'Parcial',amount:Number(d.monto)||0,metodo:d.metodo||null,cobrador:d.cobrador||'Sin nombre',date:d.date});
         }
       });
     });
   });
   return rows;
 }
+function generateTodayReport(){
+  const t=todayISO();
+  return generateReportForRange(t,t,null);
+}
 function metodoLabel(m){return m==='transferencia'?'Transferencia':m==='efectivo'?'Efectivo':'Sin especificar';}
-function buildReportText(rows){
+function buildReportText(rows, fromDate, toDate){
   const today=todayISO();
-  const completos=rows.filter(r=>r.type==='Completo');
-  const parciales=rows.filter(r=>r.type==='Parcial');
-  const total=rows.reduce((s,r)=>s+r.amount,0);
-  const totalEfectivo=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
-  const totalTransferencia=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+  const rangeLabel = (fromDate && toDate) ? (fromDate===toDate ? fromDate : `${fromDate} a ${toDate}`) : today;
   const lines=[];
-  lines.push(`Reporte de cobranza - ${today}`);
-  lines.push(`Cobrador: ${currentCobrador}`);
+  const sep='─'.repeat(40);
+
+  lines.push('='.repeat(40));
+  lines.push('REPORTE DE COBRANZA');
+  lines.push(`Periodo: ${rangeLabel}`);
+  lines.push('='.repeat(40));
   lines.push('');
-  lines.push(`PAGOS COMPLETOS (${completos.length}):`);
-  if(!completos.length) lines.push('  (ninguno)');
-  completos.forEach(r=>lines.push(`  - ${r.client} (${r.period}): $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)}`));
-  lines.push('');
-  lines.push(`ABONOS PARCIALES (${parciales.length}):`);
-  if(!parciales.length) lines.push('  (ninguno)');
-  parciales.forEach(r=>lines.push(`  - ${r.client} (${r.period}): $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)}`));
-  lines.push('');
-  lines.push(`TOTAL EFECTIVO: $${totalEfectivo.toLocaleString('es-MX')}`);
-  lines.push(`TOTAL TRANSFERENCIA: $${totalTransferencia.toLocaleString('es-MX')}`);
-  lines.push(`TOTAL COBRADO: $${total.toLocaleString('es-MX')}`);
+
+  // Group by cobrador
+  const cobradores={};
+  rows.forEach(r=>{
+    const name=r.cobrador||'Sin nombre';
+    if(!cobradores[name]) cobradores[name]=[];
+    cobradores[name].push(r);
+  });
+
+  const cobradorNames=Object.keys(cobradores).sort();
+
+  cobradorNames.forEach(cob=>{
+    const cobRows=cobradores[cob];
+    const completos=cobRows.filter(r=>r.type==='Completo');
+    const parciales=cobRows.filter(r=>r.type==='Parcial');
+    const totalCob=cobRows.reduce((s,r)=>s+r.amount,0);
+    const totalEfCob=cobRows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+    const totalTrCob=cobRows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+
+    lines.push(sep);
+    lines.push(`COBRADOR: ${cob.toUpperCase()}`);
+    lines.push(sep);
+    lines.push('');
+    lines.push(`  PAGOS COMPLETOS (${completos.length}):`);
+    if(!completos.length) lines.push('    (ninguno)');
+    completos.forEach(r=>{
+      lines.push(`    ✓ ${r.client} (${r.period})`);
+      lines.push(`      $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)} · ${r.date}`);
+    });
+    lines.push('');
+    lines.push(`  ABONOS PARCIALES (${parciales.length}):`);
+    if(!parciales.length) lines.push('    (ninguno)');
+    parciales.forEach(r=>{
+      lines.push(`    ◑ ${r.client} (${r.period})`);
+      lines.push(`      $${r.amount.toLocaleString('es-MX')} · ${metodoLabel(r.metodo)} · ${r.date}`);
+    });
+    lines.push('');
+    lines.push(`  Efectivo:      $${totalEfCob.toLocaleString('es-MX')}`);
+    lines.push(`  Transferencia: $${totalTrCob.toLocaleString('es-MX')}`);
+    lines.push(`  Subtotal:      $${totalCob.toLocaleString('es-MX')}`);
+    lines.push('');
+  });
+
+  // Grand total
+  const grandTotal=rows.reduce((s,r)=>s+r.amount,0);
+  const grandEf=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+  const grandTr=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+  lines.push('='.repeat(40));
+  lines.push('RESUMEN GENERAL');
+  lines.push('='.repeat(40));
+  lines.push(`  Cobradores activos: ${cobradorNames.length}`);
+  lines.push(`  Total recibos: ${rows.length}`);
+  lines.push(`  Total efectivo:      $${grandEf.toLocaleString('es-MX')}`);
+  lines.push(`  Total transferencia: $${grandTr.toLocaleString('es-MX')}`);
+  lines.push(`  TOTAL COBRADO: $${grandTotal.toLocaleString('es-MX')}`);
+  lines.push('='.repeat(40));
   return lines.join('\n');
 }
 function openReportModal(){
   const rows=generateTodayReport();
-  const completos=rows.filter(r=>r.type==='Completo');
-  const parciales=rows.filter(r=>r.type==='Parcial');
   const total=rows.reduce((s,r)=>s+r.amount,0);
-  const totalEfectivo=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
-  const totalTransferencia=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
-  document.getElementById('reportSub').textContent=`${currentCobrador||'(sin nombre)'} · ${todayISO()}`;
+  const totalEf=rows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+  const totalTr=rows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+  document.getElementById('reportSub').textContent=`Mes: ${MONTHS[curMonth]} ${curYear}`;
   let html='';
-  html+=`<div class="report-group-title">Pagos completos (${completos.length})</div>`;
-  html+=completos.length?completos.map(r=>`<div class="report-line"><span>${escapeHtml(r.client)} <span style="color:var(--muted)">(${r.period}) · ${metodoLabel(r.metodo)}</span></span><span>$${r.amount.toLocaleString('es-MX')}</span></div>`).join(''):`<div style="font-size:13px;color:var(--muted);padding:4px 0;">Ninguno todavía</div>`;
-  html+=`<div class="report-group-title">Abonos parciales (${parciales.length})</div>`;
-  html+=parciales.length?parciales.map(r=>`<div class="report-line"><span>${escapeHtml(r.client)} <span style="color:var(--muted)">(${r.period}) · ${metodoLabel(r.metodo)}</span></span><span>$${r.amount.toLocaleString('es-MX')}</span></div>`).join(''):`<div style="font-size:13px;color:var(--muted);padding:4px 0;">Ninguno todavía</div>`;
-  html+=`<div class="report-group-title">Totales por método</div>`;
-  html+=`<div class="report-line"><span>Efectivo</span><span>$${totalEfectivo.toLocaleString('es-MX')}</span></div>`;
-  html+=`<div class="report-line"><span>Transferencia</span><span>$${totalTransferencia.toLocaleString('es-MX')}</span></div>`;
-  html+=`<div class="report-total"><span>Total cobrado</span><span>$${total.toLocaleString('es-MX')}</span></div>`;
+
+  // Group by cobrador
+  const cobradores={};
+  rows.forEach(r=>{
+    const name=r.cobrador||'Sin nombre';
+    if(!cobradores[name]) cobradores[name]=[];
+    cobradores[name].push(r);
+  });
+  const cobradorNames=Object.keys(cobradores).sort();
+
+  if(!cobradorNames.length){
+    html=`<div style="text-align:center;padding:20px;color:var(--muted);font-size:14px;">No hay pagos registrados este mes</div>`;
+  } else {
+    cobradorNames.forEach(cob=>{
+      const cobRows=cobradores[cob];
+      const completos=cobRows.filter(r=>r.type==='Completo');
+      const parciales=cobRows.filter(r=>r.type==='Parcial');
+      const subtotal=cobRows.reduce((s,r)=>s+r.amount,0);
+      const subEf=cobRows.filter(r=>r.metodo==='efectivo').reduce((s,r)=>s+r.amount,0);
+      const subTr=cobRows.filter(r=>r.metodo==='transferencia').reduce((s,r)=>s+r.amount,0);
+      html+=`<div class="report-group-title" style="background:var(--green);color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;">
+        <i class="ti ti-user"></i> ${escapeHtml(cob)}
+        <span style="float:right;font-size:13px;">$${subtotal.toLocaleString('es-MX')}</span>
+      </div>`;
+      if(completos.length){
+        html+=`<div style="font-size:12px;font-weight:700;color:var(--green-dark);padding:4px 0 2px;">✓ Pagos completos (${completos.length})</div>`;
+        html+=completos.map(r=>`<div class="report-line">
+          <span>${escapeHtml(r.client)} <span style="color:var(--muted);font-size:11px;">(${r.period}) · ${r.date||''} · ${metodoLabel(r.metodo)}</span></span>
+          <span>$${r.amount.toLocaleString('es-MX')}</span>
+        </div>`).join('');
+      }
+      if(parciales.length){
+        html+=`<div style="font-size:12px;font-weight:700;color:var(--amber-dark);padding:6px 0 2px;">◑ Abonos (${parciales.length})</div>`;
+        html+=parciales.map(r=>`<div class="report-line">
+          <span>${escapeHtml(r.client)} <span style="color:var(--muted);font-size:11px;">(${r.period}) · ${r.date||''} · ${metodoLabel(r.metodo)}</span></span>
+          <span>$${r.amount.toLocaleString('es-MX')}</span>
+        </div>`).join('');
+      }
+      html+=`<div class="report-line" style="background:var(--bg);border-radius:6px;margin:6px 0 12px;">
+        <span style="font-size:12px;color:var(--muted);">Efectivo: $${subEf.toLocaleString('es-MX')} · Transferencia: $${subTr.toLocaleString('es-MX')}</span>
+        <span style="font-weight:700;">$${subtotal.toLocaleString('es-MX')}</span>
+      </div>`;
+    });
+  }
+
+  // Grand total
+  html+=`<div class="report-total"><span>TOTAL COBRADO</span><span>$${total.toLocaleString('es-MX')}</span></div>`;
+  html+=`<div class="report-line" style="margin-top:4px;"><span style="color:var(--muted);font-size:12px;">Efectivo</span><span>$${totalEf.toLocaleString('es-MX')}</span></div>`;
+  html+=`<div class="report-line"><span style="color:var(--muted);font-size:12px;">Transferencia</span><span>$${totalTr.toLocaleString('es-MX')}</span></div>`;
+
   document.getElementById('reportPreview').innerHTML=html;
   document.getElementById('reportModal').classList.add('open');
 }
 function closeReportModal(){document.getElementById('reportModal').classList.remove('open');}
-function downloadTodayReport(){
-  const rows=generateTodayReport();
-  const text=buildReportText(rows);
-  const safeName=(currentCobrador||'cobrador').trim().replace(/[^a-zA-Z0-9]+/g,'_');
-  const filename=`reporte_cobranza_${todayISO()}_${safeName}.txt`;
+
+// Custom report modal (rango de fechas + cobrador)
+function openCustomReportModal(){
+  closeReportModal();
+  const today=todayISO();
+  document.getElementById('rpt-from').value=today;
+  document.getElementById('rpt-to').value=today;
+  const names=new Set();
+  clients.forEach(c=>Object.values(c.payments||{}).forEach(monthObj=>{
+    Object.values(monthObj).forEach(d=>{ if(d&&typeof d==='object'&&d.cobrador) names.add(d.cobrador); });
+  }));
+  const sel=document.getElementById('rpt-cobrador');
+  sel.innerHTML='<option value="">Todos los cobradores</option>'+[...names].sort().map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  document.getElementById('customReportModal').classList.add('open');
+}
+function closeCustomReportModal(){document.getElementById('customReportModal').classList.remove('open');}
+function downloadCustomReport(){
+  const from=document.getElementById('rpt-from').value||null;
+  const to=document.getElementById('rpt-to').value||null;
+  const cobradorFilter=document.getElementById('rpt-cobrador').value||null;
+  const rows=generateReportForRange(from,to,cobradorFilter);
+  const text=buildReportText(rows,from,to);
+  const safeCob=(cobradorFilter||'todos').trim().replace(/[^a-zA-Z0-9]+/g,'_');
+  const filename=`reporte_cobranza_${from||'inicio'}_a_${to||'hoy'}_${safeCob}.txt`;
   const blob=new Blob([text],{type:'text/plain;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -693,9 +916,10 @@ function downloadTodayReport(){
   document.body.appendChild(a);a.click();
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),1500);
+  closeCustomReportModal();
 }
 
-['clientModal','payModal','reportModal','noteModal'].forEach(mid=>{
+['clientModal','payModal','disableModal','reportModal','noteModal','customReportModal'].forEach(mid=>{
   document.getElementById(mid).addEventListener('click',e=>{if(e.target===document.getElementById(mid))document.getElementById(mid).classList.remove('open');});
 });
 
