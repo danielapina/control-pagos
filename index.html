@@ -36,9 +36,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .month-bar{background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
 .month-nav-btn{background:var(--bg);border:1px solid var(--border);border-radius:8px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--text)}
 .month-label{font-size:17px;font-weight:700}
-.search-bar{background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;position:relative}
+.search-bar{background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:8px;position:relative}
 .search-bar i{position:absolute;left:28px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:17px;pointer-events:none}
-.search-bar input{width:100%;padding:11px 14px 11px 38px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none}
+.search-bar input{flex:1;min-width:0;padding:11px 14px 11px 38px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:15px;outline:none}
 .search-bar input:focus{border-color:var(--green)}
 .summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 16px}
 .stat{background:var(--card);border-radius:var(--radius);padding:14px}
@@ -127,6 +127,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .report-line:last-child{border-bottom:none}
 .report-group-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;margin:14px 0 4px}
 .report-total{display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:14px;padding-top:10px;border-top:2px solid var(--border)}
+.cobrador-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;background:var(--bg);margin-bottom:8px}
+.cobrador-row.hidden-cobrador{opacity:.55}
+.cobrador-row .name{font-size:14px;font-weight:600}
+.cobrador-row .toggle-btn{background:none;border:none;cursor:pointer;font-size:19px;color:var(--muted);padding:4px}
+.cobrador-row .toggle-btn.active{color:var(--orange)}
 </style>
 </head>
 <body>
@@ -318,14 +323,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     </div>
     <div class="field">
       <label>Cobrador</label>
-      <select id="rpt-cobrador">
-        <option value="">Todos los cobradores</option>
-      </select>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="rpt-cobrador" style="flex:1;">
+          <option value="">Todos los cobradores</option>
+        </select>
+        <button type="button" class="icon-btn" onclick="openCobradoresModal()" title="Administrar cobradores" style="flex-shrink:0;color:#7048e8;"><i class="ti ti-users"></i></button>
+      </div>
     </div>
 
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeCustomReportModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="downloadCustomReport()"><i class="ti ti-download"></i> Descargar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cobradores modal -->
+<div class="modal-overlay" id="cobradoresModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h2><i class="ti ti-users" style="color:var(--green)"></i> Cobradores</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px;margin-top:-8px;font-weight:500;">Oculta un cobrador de esta lista y de los reportes nuevos, sin borrar sus cobros ya registrados.</p>
+    <div id="cobradoresList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeCobradoresModal()">Listo</button>
     </div>
   </div>
 </div>
@@ -339,6 +360,7 @@ let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
 // Cobro un mes atrasado: mostrar el mes anterior por default
 if(curMonth===0){ curMonth=11; curYear--; } else { curMonth--; }
 let clients=[], nextId=1, syncTimeout=null, isSaving=false, payOption=null, payMetodo=null;
+let hiddenCobradores=[];
 let currentCobrador = sessionStorage.getItem('cobrador') || '';
 let searchQuery='';
 
@@ -382,20 +404,20 @@ async function loadData() {
   setSyncStatus('saving');
   try {
     const r=await fetch(SHEET_URL+'?t='+Date.now()); const t=await r.text();
-    if(t&&t!=='{}'&&t.trim().startsWith('{')){const d=JSON.parse(t);clients=d.clients||[];nextId=d.nextId||1;}
+    if(t&&t!=='{}'&&t.trim().startsWith('{')){const d=JSON.parse(t);clients=d.clients||[];nextId=d.nextId||1;hiddenCobradores=d.hiddenCobradores||[];}
     else loadLocal();
     migrateClients(); render(); setSyncStatus('ok');
   } catch(e){loadLocal();migrateClients();render();setSyncStatus('error');}
 }
 async function saveData() {
   if(isSaving) return; isSaving=true; setSyncStatus('saving');
-  try{ await fetch(SHEET_URL,{method:'POST',body:JSON.stringify({clients,nextId}),headers:{'Content-Type':'text/plain'}}); setSyncStatus('ok'); }
+  try{ await fetch(SHEET_URL,{method:'POST',body:JSON.stringify({clients,nextId,hiddenCobradores}),headers:{'Content-Type':'text/plain'}}); setSyncStatus('ok'); }
   catch(e){ setSyncStatus('error'); }
   isSaving=false;
 }
 function scheduleSave(){saveLocal();clearTimeout(syncTimeout);syncTimeout=setTimeout(saveData,1000);}
-function saveLocal(){try{localStorage.setItem('cpagos_v3',JSON.stringify({clients,nextId}));}catch(e){}}
-function loadLocal(){try{const s=localStorage.getItem('cpagos_v3');if(s){const d=JSON.parse(s);clients=d.clients||[];nextId=d.nextId||1;}}catch(e){}}
+function saveLocal(){try{localStorage.setItem('cpagos_v3',JSON.stringify({clients,nextId,hiddenCobradores}));}catch(e){}}
+function loadLocal(){try{const s=localStorage.getItem('cpagos_v3');if(s){const d=JSON.parse(s);clients=d.clients||[];nextId=d.nextId||1;hiddenCobradores=d.hiddenCobradores||[];}}catch(e){}}
 // Migra datos de versiones anteriores: la antigua "Dirección / Notas" (texto fijo)
 // pasa a ser el nuevo campo fijo "address"; "notes" se vuelve un objeto por mes.
 function migrateClients(){
@@ -943,21 +965,65 @@ function openReportModal(){
 }
 function closeReportModal(){document.getElementById('reportModal').classList.remove('open');}
 
+// Nombres de todos los cobradores que aparecen en el historial de cobros
+// (incluye pagos completos y cada abono individual). Solo lectura de datos,
+// no borra ni modifica nada.
+function allCobradorNames(){
+  const names=new Set();
+  clients.forEach(c=>Object.values(c.payments||{}).forEach(monthObj=>{
+    Object.values(monthObj).forEach(d=>{
+      if(!d||typeof d!=='object') return;
+      if(d.cobrador) names.add(d.cobrador);
+      abonoList(d).forEach(a=>{ if(a.cobrador) names.add(a.cobrador); });
+    });
+  }));
+  return [...names].sort();
+}
+function populateCobradorSelect(){
+  const sel=document.getElementById('rpt-cobrador');
+  const prevVal=sel.value;
+  const names=allCobradorNames().filter(n=>!hiddenCobradores.includes(n));
+  sel.innerHTML='<option value="">Todos los cobradores</option>'+names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  if(names.includes(prevVal)) sel.value=prevVal;
+}
+
 // Custom report modal (rango de fechas + cobrador)
 function openCustomReportModal(){
   closeReportModal();
   const today=todayISO();
   document.getElementById('rpt-from').value=today;
   document.getElementById('rpt-to').value=today;
-  const names=new Set();
-  clients.forEach(c=>Object.values(c.payments||{}).forEach(monthObj=>{
-    Object.values(monthObj).forEach(d=>{ if(d&&typeof d==='object'&&d.cobrador) names.add(d.cobrador); });
-  }));
-  const sel=document.getElementById('rpt-cobrador');
-  sel.innerHTML='<option value="">Todos los cobradores</option>'+[...names].sort().map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  populateCobradorSelect();
   document.getElementById('customReportModal').classList.add('open');
 }
 function closeCustomReportModal(){document.getElementById('customReportModal').classList.remove('open');}
+
+// Cobradores: ocultarlos de la lista/reportes futuros sin borrar sus cobros
+function openCobradoresModal(){
+  const names=allCobradorNames();
+  const el=document.getElementById('cobradoresList');
+  if(!names.length){
+    el.innerHTML=`<div class="empty-state" style="padding:20px;"><i class="ti ti-users"></i>Todavía no hay cobros registrados con nombre de cobrador.</div>`;
+  } else {
+    el.innerHTML=names.map(n=>{
+      const isHidden=hiddenCobradores.includes(n);
+      const safeAttr=n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      return `<div class="cobrador-row ${isHidden?'hidden-cobrador':''}">
+        <span class="name">${escapeHtml(n)}${isHidden?' <span style="font-size:11px;color:var(--orange);font-weight:600;">(oculto)</span>':''}</span>
+        <button class="toggle-btn ${isHidden?'active':''}" onclick="toggleCobradorHidden('${safeAttr}')" title="${isHidden?'Mostrar de nuevo':'Ocultar'}"><i class="ti ti-${isHidden?'eye-off':'trash'}"></i></button>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('cobradoresModal').classList.add('open');
+}
+function closeCobradoresModal(){document.getElementById('cobradoresModal').classList.remove('open');}
+function toggleCobradorHidden(name){
+  const idx=hiddenCobradores.indexOf(name);
+  if(idx>=0) hiddenCobradores.splice(idx,1); else hiddenCobradores.push(name);
+  scheduleSave();
+  openCobradoresModal();
+  if(document.getElementById('customReportModal').classList.contains('open')) populateCobradorSelect();
+}
 function downloadCustomReport(){
   const from=document.getElementById('rpt-from').value||null;
   const to=document.getElementById('rpt-to').value||null;
@@ -976,7 +1042,7 @@ function downloadCustomReport(){
   closeCustomReportModal();
 }
 
-['clientModal','payModal','disableModal','reportModal','noteModal','customReportModal'].forEach(mid=>{
+['clientModal','payModal','disableModal','reportModal','noteModal','customReportModal','cobradoresModal'].forEach(mid=>{
   document.getElementById(mid).addEventListener('click',e=>{if(e.target===document.getElementById(mid))document.getElementById(mid).classList.remove('open');});
 });
 
