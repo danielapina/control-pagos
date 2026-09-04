@@ -53,8 +53,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .tab.active{color:var(--green);border-bottom-color:var(--green);font-weight:700}
 .section{display:none;padding:12px 16px}.section.active{display:block}
 .client-card{background:var(--card);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07)}
-.client-head{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.client-head{padding:14px 16px 6px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .client-info{flex:1;min-width:0}
+.client-actions{display:flex;gap:6px;flex-shrink:0}
+.client-status-row{padding:0 16px 10px}
 .client-name{font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .client-meta{font-size:12px;color:var(--muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px}
 .icon-btn{background:var(--bg);border:none;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--muted)}
@@ -224,6 +226,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
     <input type="hidden" id="pay-clientId"/>
     <input type="hidden" id="pay-periodKey"/>
     <button class="clear-btn" id="clearBtn" onclick="clearPay()"><i class="ti ti-x"></i> Quitar registro de pago</button>
+    <div id="abonoHistory" style="display:none;"></div>
     <div class="pay-options">
       <div class="pay-option" id="opt-paid" onclick="selectPayOption('paid')">
         <i class="ti ti-circle-check"></i><span>Pagado completo</span>
@@ -233,7 +236,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
       </div>
     </div>
     <div class="monto-wrap field" id="abonoWrap">
-      <label>Monto del abono ($)</label>
+      <label id="pay-monto-label">Monto del abono ($)</label>
       <input type="number" id="pay-monto" placeholder="Ej: 250"/>
     </div>
     <div class="field">
@@ -428,6 +431,13 @@ function toggleDisabled(c,k){
 }
 function isPaidEntry(d){return d===true||d==='paid'||(d&&typeof d==='object'&&d.type==='paid');}
 function isAbonoEntry(d){return !!(d&&typeof d==='object'&&d.type==='abono');}
+// Lista de abonos individuales de un recibo (soporta el formato nuevo con historial
+// y el formato antiguo de un solo abono, para no perder datos previos).
+function abonoList(d){
+  if(d && typeof d==='object' && Array.isArray(d.abonos)) return d.abonos;
+  if(d && typeof d==='object' && d.type==='abono') return [{monto:d.monto,date:d.date,cobrador:d.cobrador,metodo:d.metodo}];
+  return [];
+}
 function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function isVisibleThisMonth(c){
@@ -503,15 +513,13 @@ function renderList(freq,cid){
           <div class="client-name">${escapeHtml(c.name)}</div>
           <div class="client-meta">${amt?`<span>${amt}</span>`:''} ${c.address?`<span>· ${escapeHtml(c.address)}</span>`:''} ${monthNote?`<span class="note-chip"><i class="ti ti-note"></i> ${escapeHtml(monthNote)}</span>`:''} ${suspendNotice}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          ${getStatusBadge(c)}
-          <div style="display:flex;gap:6px;">
-            <button class="icon-btn note" onclick="openNoteModal(${c.id})"><i class="ti ti-note"></i></button>
-            <button class="icon-btn edit" onclick="openEditModal(${c.id})"><i class="ti ti-pencil"></i></button>
-            <button class="icon-btn del"  onclick="deleteClient(${c.id})"><i class="ti ti-trash"></i></button>
-          </div>
+        <div class="client-actions">
+          <button class="icon-btn note" onclick="openNoteModal(${c.id})"><i class="ti ti-note"></i></button>
+          <button class="icon-btn edit" onclick="openEditModal(${c.id})"><i class="ti ti-pencil"></i></button>
+          <button class="icon-btn del"  onclick="deleteClient(${c.id})"><i class="ti ti-trash"></i></button>
         </div>
       </div>
+      <div class="client-status-row">${getStatusBadge(c)}</div>
       <div class="periods-row">${btns}</div>
     </div>`;
   }).join('');
@@ -523,9 +531,16 @@ function updateSummary(){
     total++;const d=getPD(c,p.key);
     if(isPaidEntry(d)){
       paid++;
-      const amt=Number(c.amount)||0;
+      const list=abonoList(d);
+      const amt=list.length ? list.reduce((s,a)=>s+Number(a.monto||0),0) : (Number(c.amount)||0);
       paidAmt+=amt;
-      if(d&&typeof d==='object'){
+      if(list.length){
+        list.forEach(a=>{
+          const am=Number(a.monto||0);
+          if(a.metodo==='transferencia') transferenciaAmt+=am;
+          else if(a.metodo==='efectivo') efectivoAmt+=am;
+        });
+      } else if(d&&typeof d==='object'){
         if(d.metodo==='transferencia') transferenciaAmt+=amt;
         else if(d.metodo==='efectivo') efectivoAmt+=amt;
       }
@@ -533,8 +548,11 @@ function updateSummary(){
       abonos++;
       const amt=Number(d.monto||0);
       abonoAmt+=amt;
-      if(d.metodo==='transferencia') transferenciaAmt+=amt;
-      else if(d.metodo==='efectivo') efectivoAmt+=amt;
+      abonoList(d).forEach(a=>{
+        const am=Number(a.monto||0);
+        if(a.metodo==='transferencia') transferenciaAmt+=am;
+        else if(a.metodo==='efectivo') efectivoAmt+=am;
+      });
     } else pending++;
   }));
   document.getElementById('sumPaid').textContent=paid;
@@ -574,9 +592,35 @@ function openPayModal(clientId,periodKey){
   document.getElementById('pay-monto').value='';
   const current=getPD(c,periodKey);
   document.getElementById('clearBtn').className='clear-btn'+(current?' show':'');
+
+  // Historial de abonos y saldo pendiente (si el recibo ya tiene uno o más abonos)
+  const list=abonoList(current);
+  const fullAmount=Number(c.amount)||0;
+  const totalAbonado=list.reduce((s,a)=>s+Number(a.monto||0),0);
+  const restante=Math.max(fullAmount-totalAbonado,0);
+  const historyEl=document.getElementById('abonoHistory');
+  const montoLabel=document.getElementById('pay-monto-label');
+  if(list.length){
+    const paidNow=isPaidEntry(current);
+    const boxBg=paidNow?'var(--green-bg)':'var(--amber-bg)';
+    const boxColor=paidNow?'var(--green-dark)':'var(--amber-dark)';
+    const headline=paidNow
+      ? `Pagado con ${list.length} abono${list.length>1?'s':''}:`
+      : `Abonado: $${totalAbonado.toLocaleString('es-MX')} de $${fullAmount.toLocaleString('es-MX')} · Falta $${restante.toLocaleString('es-MX')}`;
+    historyEl.innerHTML = `<div style="background:${boxBg};color:${boxColor};border-radius:10px;padding:10px 12px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px;">${headline}</div>
+      ${list.map(a=>`<div style="font-size:12px;display:flex;justify-content:space-between;padding:2px 0;"><span>${a.date||''} · ${metodoLabel(a.metodo)}${a.cobrador?' · '+escapeHtml(a.cobrador):''}</span><span>$${Number(a.monto||0).toLocaleString('es-MX')}</span></div>`).join('')}
+    </div>`;
+    historyEl.style.display='block';
+    montoLabel.textContent = paidNow ? 'Monto del abono ($)' : `Monto de este abono ($) · falta $${restante.toLocaleString('es-MX')}`;
+  } else {
+    historyEl.innerHTML='';
+    historyEl.style.display='none';
+    montoLabel.textContent='Monto del abono ($)';
+  }
+
   if(isPaidEntry(current)) selectPayOption('paid');
-  else if(isAbonoEntry(current)){selectPayOption('abono');document.getElementById('pay-monto').value=current.monto;}
-  if(current && typeof current==='object' && current.metodo) selectMetodo(current.metodo);
+  else if(isAbonoEntry(current)) selectPayOption('abono');
   document.getElementById('payModal').classList.add('open');
 }
 function closePayModal(){document.getElementById('payModal').classList.remove('open');}
@@ -602,12 +646,25 @@ function confirmPay(){
   if(!payMetodo){alert('Selecciona el método de pago (efectivo o transferencia).');return;}
   const c=clients.find(x=>x.id===parseInt(document.getElementById('pay-clientId').value));if(!c)return;
   const k=document.getElementById('pay-periodKey').value;
+  const current=getPD(c,k);
+  const existingAbonos=abonoList(current);
   if(payOption==='paid'){
-    setPD(c,k,{type:'paid',date:todayISO(),cobrador:currentCobrador,metodo:payMetodo});
+    const entry={type:'paid',date:todayISO(),cobrador:currentCobrador,metodo:payMetodo};
+    if(existingAbonos.length) entry.abonos=existingAbonos;
+    setPD(c,k,entry);
   } else {
     const m=document.getElementById('pay-monto').value;
     if(!m){document.getElementById('pay-monto').focus();return;}
-    setPD(c,k,{type:'abono',monto:Number(m),date:todayISO(),cobrador:currentCobrador,metodo:payMetodo});
+    const nuevoAbono={monto:Number(m),date:todayISO(),cobrador:currentCobrador,metodo:payMetodo};
+    const abonos=existingAbonos.concat([nuevoAbono]);
+    const totalAbonado=abonos.reduce((s,a)=>s+Number(a.monto||0),0);
+    const fullAmount=Number(c.amount)||0;
+    if(fullAmount>0 && totalAbonado>=fullAmount){
+      setPD(c,k,{type:'paid',date:todayISO(),cobrador:currentCobrador,metodo:payMetodo,abonos});
+      alert(`✓ Recibo completado automáticamente.\nTotal abonado: $${totalAbonado.toLocaleString('es-MX')}`);
+    } else {
+      setPD(c,k,{type:'abono',monto:totalAbonado,date:todayISO(),cobrador:currentCobrador,metodo:payMetodo,abonos});
+    }
   }
   scheduleSave();render();closePayModal();
 }
